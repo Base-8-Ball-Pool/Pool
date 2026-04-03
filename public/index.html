@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🎱 8-Ball Pool</title>
+  <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:#0f172a;color:#f1f5f9;font-family:'Segoe UI',system-ui,sans-serif}
+
+    .screen{display:none;min-height:100vh;align-items:center;justify-content:center;flex-direction:column}
+    .screen.active{display:flex}
+
+    .card{background:#1e293b;border:1px solid #334155;border-radius:18px;padding:36px 32px;width:380px;max-width:calc(100vw - 32px);text-align:center;box-shadow:0 12px 48px rgba(0,0,0,.6)}
+    .card h1{font-size:2rem;margin-bottom:2px}
+    .sub{color:#94a3b8;font-size:.875rem;margin-bottom:22px}
+
+    input{width:100%;padding:10px 14px;margin-bottom:12px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#f1f5f9;font-size:1rem;outline:none;transition:border .15s}
+    input:focus{border-color:#f43f5e}
+    input.code-input{text-transform:uppercase;letter-spacing:5px;font-weight:700;font-size:1.1rem;text-align:center}
+
+    .btn{display:block;width:100%;padding:12px;border:none;border-radius:9px;font-size:1rem;font-weight:700;cursor:pointer;transition:opacity .15s,transform .1s;margin-bottom:10px;letter-spacing:.3px}
+    .btn:last-child{margin-bottom:0}
+    .btn:hover:not(:disabled){opacity:.88;transform:translateY(-1px)}
+    .btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+    .btn-red{background:#f43f5e;color:#fff}
+    .btn-blue{background:#3b82f6;color:#fff}
+    .btn-gray{background:#334155;color:#f1f5f9}
+    .btn-sm{width:auto;padding:7px 16px;font-size:.85rem;display:inline-block;margin-bottom:0}
+
+    .divider{color:#475569;font-size:.8rem;margin:12px 0;position:relative}
+    .divider::before,.divider::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:#334155}
+    .divider::before{left:0}.divider::after{right:0}
+    .err{color:#f87171;font-size:.82rem;margin-top:6px;min-height:1.2em}
+    .room-code-big{font-size:2.8rem;font-weight:900;letter-spacing:12px;color:#f43f5e;margin:16px 0;font-family:monospace}
+    .hint{color:#64748b;font-size:.82rem;margin-top:8px;line-height:1.5}
+
+    .spinner{width:44px;height:44px;border:4px solid #334155;border-top-color:#f43f5e;border-radius:50%;animation:spin .8s linear infinite;margin:18px auto}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .ping{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px;animation:pulse 1.2s infinite;vertical-align:middle}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+    /* Game */
+    #gameScreen{padding:12px;gap:10px;flex-direction:column;align-items:center}
+    #gameLayout{display:flex;gap:12px;align-items:flex-start;width:min(1080px,100%)}
+    #gameLeft{display:flex;flex-direction:column;gap:10px;flex:1;min-width:0}
+    #hud{display:flex;align-items:center;background:#1e293b;border-radius:10px;padding:10px 16px;border:1px solid #334155;gap:10px}
+    .hud-col{display:flex;flex-direction:column;gap:2px;min-width:110px}
+    .hud-col.right{align-items:flex-end}
+    .hud-name{font-weight:700;font-size:.92rem}
+    .hud-type{font-size:.68rem;color:#94a3b8;text-transform:uppercase;letter-spacing:1px}
+    #hudStatus{flex:2;text-align:center;font-size:.85rem;font-weight:600;color:#f43f5e;line-height:1.4}
+    .active .hud-name{color:#f43f5e}
+    .active .hud-type{color:#fca5a5}
+    #tableWrap{border-radius:10px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,.7);border:8px solid #78350f}
+    canvas{display:block}
+    #powerWrap{height:9px;background:#1e293b;border-radius:5px;border:1px solid #334155;overflow:hidden}
+    #powerFill{height:100%;width:0;background:linear-gradient(90deg,#22c55e,#f43f5e);border-radius:5px;transition:width .04s}
+
+    /* Chat */
+    #chatPanel{width:220px;flex-shrink:0;background:#1e293b;border:1px solid #334155;border-radius:12px;display:flex;flex-direction:column;overflow:hidden;height:460px}
+    #chatHeader{padding:10px 12px;font-size:.78rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #334155;display:flex;align-items:center;gap:6px}
+    #chatHeader .chat-dot{width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0}
+    #chatMessages{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px;scroll-behavior:smooth}
+    #chatMessages::-webkit-scrollbar{width:4px}
+    #chatMessages::-webkit-scrollbar-thumb{background:#334155;border-radius:2px}
+    .chat-msg{font-size:.82rem;line-height:1.4;word-break:break-word}
+    .chat-msg .chat-who{font-weight:700;font-size:.72rem;margin-bottom:1px}
+    .chat-msg.me .chat-who{color:#f43f5e}
+    .chat-msg.opp .chat-who{color:#60a5fa}
+    .chat-msg.sys{color:#475569;font-size:.75rem;text-align:center;font-style:italic;padding:2px 0}
+    .chat-bubble{background:#0f172a;border-radius:8px;padding:5px 8px;display:inline-block;max-width:100%}
+    .chat-msg.me .chat-bubble{background:#1e1535}
+    .chat-emojis{display:flex;gap:4px;padding:8px 10px;border-top:1px solid #334155;flex-wrap:wrap}
+    .emoji-btn{background:none;border:1px solid #334155;border-radius:6px;font-size:1rem;cursor:pointer;padding:3px 5px;transition:background .1s;line-height:1}
+    .emoji-btn:hover{background:#334155}
+    #chatInputRow{display:flex;gap:6px;padding:8px 10px;border-top:1px solid #334155}
+    #chatInput{flex:1;background:#0f172a;border:1px solid #334155;border-radius:7px;color:#f1f5f9;font-size:.82rem;padding:6px 8px;outline:none;min-width:0}
+    #chatInput:focus{border-color:#f43f5e}
+    #chatSend{background:#f43f5e;border:none;border-radius:7px;color:#fff;font-size:.82rem;font-weight:700;padding:6px 10px;cursor:pointer;flex-shrink:0}
+    #chatSend:hover{opacity:.85}
+    @media(max-width:700px){
+      #gameLayout{flex-direction:column}
+      #chatPanel{width:100%;height:200px}
+    }
+
+    /* Game result overlay */
+    #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;align-items:center;justify-content:center}
+    #overlay.show{display:flex}
+    #overlayBox{background:#1e293b;border:2px solid #f43f5e;border-radius:18px;padding:36px 44px;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.7);max-width:340px;width:90%}
+    #overlayTitle{font-size:1.7rem;font-weight:800;margin-bottom:6px}
+    #overlaySub{color:#94a3b8;font-size:.9rem;margin-bottom:22px;line-height:1.5}
+
+    /* ── Reconnect overlay ── */
+    #reconnectOverlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:60;align-items:center;justify-content:center}
+    #reconnectOverlay.show{display:flex}
+    #reconnectBox{background:#1e293b;border:2px solid #f59e0b;border-radius:18px;padding:36px 44px;text-align:center;max-width:320px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.7)}
+    #reconnectBox h3{font-size:1.25rem;font-weight:800;margin-bottom:8px;color:#f59e0b}
+    #reconnectBox p{color:#94a3b8;font-size:.9rem;margin-bottom:20px;line-height:1.5}
+    #reconnectTimer{font-size:3rem;font-weight:900;color:#f59e0b;margin-bottom:16px;font-variant-numeric:tabular-nums}
+    .timer-ring{position:relative;display:inline-block;width:80px;height:80px;margin-bottom:12px}
+    .timer-ring svg{transform:rotate(-90deg)}
+    .timer-ring-track{fill:none;stroke:#334155;stroke-width:6}
+    .timer-ring-fill{fill:none;stroke:#f59e0b;stroke-width:6;stroke-linecap:round;stroke-dasharray:220;stroke-dashoffset:0;transition:stroke-dashoffset 1s linear,stroke .5s}
+    .timer-ring-fill.urgent{stroke:#f43f5e}
+    .timer-ring-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:900;color:#f59e0b}
+    .timer-ring-num.urgent{color:#f43f5e}
+
+    /* Leaderboard */
+    #lbScreen{padding:16px}
+    #lbScreen .card{width:min(640px,100%);max-width:100%;padding:28px 24px}
+    .lb-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+    .lb-header h2{font-size:1.3rem;font-weight:800}
+    table{width:100%;border-collapse:collapse;font-size:.9rem}
+    thead th{padding:8px 10px;text-align:left;color:#64748b;font-size:.75rem;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #334155}
+    thead th.right,tbody td.right{text-align:right}
+    tbody tr:hover{background:rgba(255,255,255,.03)}
+    tbody td{padding:10px 10px;border-bottom:1px solid #1e293b}
+    .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;font-weight:800;font-size:.78rem}
+    .rank-1{background:#f59e0b;color:#000}.rank-2{background:#9ca3af;color:#000}.rank-3{background:#b45309;color:#fff}.rank-n{background:#1e293b;color:#94a3b8;border:1px solid #334155}
+    .win-rate{font-size:.78rem;color:#94a3b8}
+    .lb-empty,.lb-loading{color:#475569;padding:32px 0;font-size:.9rem}
+    .you-row td{background:rgba(244,63,94,.07)!important}
+    .you-highlight{color:#f43f5e;font-weight:700}
+
+    #lobbyScreen{position:relative}
+    .lb-btn-wrap{position:absolute;top:20px;right:20px}
+    #onlineBadge{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#1e293b;border:1px solid #334155;border-radius:20px;padding:5px 14px;font-size:.75rem;color:#94a3b8;z-index:70;display:none;white-space:nowrap}
+    #onlineBadge span.cnt{color:#22c55e;font-weight:700}
+  </style>
+</head>
+<body>
+
+<div id="onlineBadge"><span class="ping"></span><span class="cnt" id="onlineCount">0</span> online now</div>
+
+<!-- LOBBY -->
+<div id="lobbyScreen" class="screen active">
+  <div class="lb-btn-wrap"><button class="btn btn-gray btn-sm" id="btnShowLb">🏆 Leaderboard</button></div>
+  <div class="card">
+    <h1>🎱 8-Ball Pool</h1>
+    <p class="sub">Multiplayer · Real-time · Ranked</p>
+    <input id="myName" type="text" placeholder="Your name (saved to leaderboard)" maxlength="20" autocomplete="off"/>
+    <button class="btn btn-red" id="btnQuickMatch">⚡ Quick Match</button>
+    <div class="divider">play with a friend</div>
+    <button class="btn btn-blue" id="btnCreate">Create Room</button>
+    <input id="codeInput" type="text" placeholder="ROOM CODE" maxlength="4" class="code-input" autocomplete="off"/>
+    <button class="btn btn-gray" id="btnJoin">Join Room</button>
+    <p class="err" id="lobbyErr"></p>
+  </div>
+</div>
+
+<!-- MATCHMAKING -->
+<div id="mmScreen" class="screen">
+  <div class="card">
+    <h2 style="font-size:1.3rem;margin-bottom:6px">Finding an opponent…</h2>
+    <p class="hint" style="margin-bottom:16px">You'll be matched automatically.</p>
+    <div class="spinner"></div>
+    <p id="mmStatus" style="font-size:.9rem;color:#cbd5e1;margin-bottom:4px"><span class="ping"></span>Searching…</p>
+    <p id="mmQueue" style="font-size:.78rem;color:#64748b;margin-bottom:20px">Position in queue: <strong id="queuePos">1</strong></p>
+    <button class="btn btn-gray" id="btnCancelMM">Cancel</button>
+  </div>
+</div>
+
+<!-- WAITING (friend) -->
+<div id="waitScreen" class="screen">
+  <div class="card">
+    <h2 style="font-size:1.2rem;margin-bottom:14px">Waiting for your friend…</h2>
+    <p>Share this code:</p>
+    <div class="room-code-big" id="myCode">----</div>
+    <p class="hint">They click <strong>Join Room</strong> and enter this code.</p>
+    <button class="btn btn-gray" id="btnCancelWait" style="margin-top:22px">Cancel</button>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="gameScreen" class="screen">
+  <div id="gameLayout">
+    <div id="gameLeft">
+      <div id="hud">
+        <div class="hud-col" id="hudP1">
+          <span class="hud-name" id="p1Name">Player 1</span>
+          <span class="hud-type" id="p1Type">—</span>
+        </div>
+        <div id="hudStatus">Loading…</div>
+        <div class="hud-col right" id="hudP2">
+          <span class="hud-name" id="p2Name">Player 2</span>
+          <span class="hud-type" id="p2Type">—</span>
+        </div>
+      </div>
+      <div id="tableWrap"><canvas id="c"></canvas></div>
+      <div id="powerWrap"><div id="powerFill"></div></div>
+    </div>
+    <!-- Chat panel -->
+    <div id="chatPanel">
+      <div id="chatHeader"><span class="chat-dot"></span>Match Chat</div>
+      <div id="chatMessages"></div>
+      <div class="chat-emojis">
+        <button class="emoji-btn" data-emoji="😂">😂</button>
+        <button class="emoji-btn" data-emoji="👏">👏</button>
+        <button class="emoji-btn" data-emoji="😤">😤</button>
+        <button class="emoji-btn" data-emoji="🎱">🎱</button>
+        <button class="emoji-btn" data-emoji="😬">😬</button>
+        <button class="emoji-btn" data-emoji="🔥">🔥</button>
+      </div>
+      <div id="chatInputRow">
+        <input id="chatInput" type="text" placeholder="Say something…" maxlength="120" autocomplete="off"/>
+        <button id="chatSend">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LEADERBOARD -->
+<div id="lbScreen" class="screen">
+  <div class="card">
+    <div class="lb-header">
+      <h2>🏆 Leaderboard</h2>
+      <button class="btn btn-gray btn-sm" id="btnLbBack">← Back</button>
+    </div>
+    <div id="lbContent"><p class="lb-loading">Loading…</p></div>
+  </div>
+</div>
+
+<!-- GAME RESULT OVERLAY -->
+<div id="overlay">
+  <div id="overlayBox">
+    <div id="overlayTitle">—</div>
+    <div id="overlaySub"></div>
+    <button class="btn btn-red"  id="btnRematch"  style="display:none">Play Again</button>
+    <button class="btn btn-blue" id="btnFindNew"  style="display:none">Find New Opponent</button>
+    <button class="btn btn-gray" id="btnViewLb"   style="display:none">🏆 Leaderboard</button>
+    <button class="btn btn-gray" id="btnHome">Main Menu</button>
+  </div>
+</div>
+
+<!-- RECONNECT COUNTDOWN OVERLAY -->
+<div id="reconnectOverlay">
+  <div id="reconnectBox">
+    <h3>⚠ Opponent disconnected</h3>
+    <p id="reconnectMsg">Waiting for <strong id="reconnectName">opponent</strong> to reconnect…</p>
+    <div class="timer-ring">
+      <svg width="80" height="80" viewBox="0 0 80 80">
+        <circle class="timer-ring-track" cx="40" cy="40" r="35"/>
+        <circle class="timer-ring-fill" id="timerRingFill" cx="40" cy="40" r="35"/>
+      </svg>
+      <div class="timer-ring-num" id="timerRingNum">30</div>
+    </div>
+    <p style="font-size:.78rem;color:#64748b">If they don't return in time, you win.</p>
+    <button class="btn btn-gray" id="btnForfeitWait" style="margin-top:16px;font-size:.85rem">Don't wait — take the win</button>
+  </div>
+</div>
+
+<script>
+// ================================================================
+//  8-Ball Pool — Vercel + Ably + KV Leaderboard + Reconnect Timer
+// ================================================================
+
+/* ── Constants ── */
+const TW=800,TH=400,BR=10,PR=20,FRICTION=0.988,CR=0.75,BRES=0.96,MAX_PWR=22;
+const RECONNECT_SECONDS=30;
+const POCKETS=[[PR,PR],[TW/2,PR-6],[TW-PR,PR],[PR,TH-PR],[TW/2,TH-PR+6],[TW-PR,TH-PR]];
+const BALL_COLORS={0:'#fff',1:'#f5e642',2:'#1a3be8',3:'#e83a1a',4:'#6b0fa8',5:'#e87d1a',6:'#1a7a1a',7:'#8b1a1a',8:'#111',9:'#f5e642',10:'#1a3be8',11:'#e83a1a',12:'#6b0fa8',13:'#e87d1a',14:'#1a7a1a',15:'#8b1a1a'};
+const IS_STRIPE=id=>id>=9&&id<=15;
+
+/* ── DOM ── */
+const $=id=>document.getElementById(id);
+const screens={lobby:$('lobbyScreen'),mm:$('mmScreen'),wait:$('waitScreen'),game:$('gameScreen'),lb:$('lbScreen')};
+const canvas=$('c'),ctx=canvas.getContext('2d');
+const lobbyErr=$('lobbyErr');
+const hudStatusEl=$('hudStatus'),p1NameEl=$('p1Name'),p2NameEl=$('p2Name'),p1TypeEl=$('p1Type'),p2TypeEl=$('p2Type');
+const powerFill=$('powerFill'),overlay=$('overlay'),overlayTitle=$('overlayTitle'),overlaySub=$('overlaySub');
+const btnRematch=$('btnRematch'),btnFindNew=$('btnFindNew'),btnHome=$('btnHome'),btnViewLb=$('btnViewLb');
+const reconnectOverlay=$('reconnectOverlay'),reconnectNameEl=$('reconnectName');
+const timerRingFill=$('timerRingFill'),timerRingNum=$('timerRingNum');
+const onlineCountEl=$('onlineCount');
+
+/* ── State ── */
+let ably,mmChannel,gameChannel;
+let myClientId=null,myName='';
+let roomCode=null,myIndex=-1;
+let playerNames=['Player 1','Player 2'];
+let gs=null,balls=[],simulating=false,shotLock=false,placingCue=false;
+let dragging=false,dragX=0,dragY=0,mouseX=TW/2,mouseY=TH/2,aimAngle=0,aimPower=0;
+let mmActive=false,mmInterval=null;
+let gameRecorded=false;
+const chatEl=()=>document.getElementById('chatMessages');
+
+/* ── Reconnect state ── */
+let reconnectTimer=null;      // setInterval handle
+let reconnectSecsLeft=0;      // countdown value
+let opponentPresent=true;     // tracks if opponent is in channel presence
+const RING_CIRC=2*Math.PI*35; // SVG circle circumference (~220)
+
+/* ── Screen ── */
+function show(name){
+  Object.values(screens).forEach(s=>s.classList.remove('active'));
+  screens[name].classList.add('active');
+  if(name==='lb')loadLeaderboard();
+}
+
+/* ── Canvas ── */
+function resize(){
+  const mw=Math.min(window.innerWidth-32,TW),s=mw/TW;
+  canvas.width=TW;canvas.height=TH;
+  canvas.style.width=Math.round(TW*s)+'px';
+  canvas.style.height=Math.round(TH*s)+'px';
+}
+window.addEventListener('resize',resize);resize();
+
+/* ── Ably ── */
+async function initAbly(){
+  if(ably&&ably.connection.state==='connected')return;
+  myClientId='u_'+Math.random().toString(36).slice(2,12);
+  ably=new Ably.Realtime({authUrl:'/api/token',clientId:myClientId});
+  await new Promise(r=>ably.connection.on('connected',r));
+  trackOnlineCount();
+}
+function trackOnlineCount(){
+  const ch=ably.channels.get('pool:presence');
+  ch.presence.enter({});
+  const refresh=()=>ch.presence.get().then(m=>{onlineCountEl.textContent=m.length;$('onlineBadge').style.display='block';});
+  ch.presence.subscribe(refresh);refresh();
+}
+
+function genCode(){
+  const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length:4},()=>c[Math.floor(Math.random()*c.length)]).join('');
+}
+
+/* ── Lobby buttons ── */
+$('myName').addEventListener('keydown',e=>{if(e.key==='Enter')$('btnQuickMatch').click();});
+$('codeInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('btnJoin').click();});
+
+$('btnQuickMatch').addEventListener('click',async()=>{
+  lobbyErr.textContent='';
+  myName=$('myName').value.trim()||'Player'+(Math.floor(Math.random()*9000)+1000);
+  $('btnQuickMatch').disabled=true;
+  try{await initAbly();show('mm');startMatchmaking();}
+  catch(e){lobbyErr.textContent=e.message;$('btnQuickMatch').disabled=false;}
+});
+$('btnCreate').addEventListener('click',async()=>{
+  lobbyErr.textContent='';
+  myName=$('myName').value.trim()||'Player'+(Math.floor(Math.random()*9000)+1000);
+  $('btnCreate').disabled=true;
+  try{
+    await initAbly();
+    roomCode=genCode();myIndex=0;playerNames[0]=myName;
+    $('myCode').textContent=roomCode;
+    show('wait');subscribeGame(roomCode,'host');
+  }catch(e){lobbyErr.textContent=e.message;$('btnCreate').disabled=false;}
+});
+$('btnJoin').addEventListener('click',async()=>{
+  lobbyErr.textContent='';
+  const code=$('codeInput').value.trim().toUpperCase();
+  myName=$('myName').value.trim()||'Player'+(Math.floor(Math.random()*9000)+1000);
+  if(code.length!==4){lobbyErr.textContent='Enter a 4-letter code.';return;}
+  $('btnJoin').disabled=true;
+  try{
+    await initAbly();
+    roomCode=code;myIndex=1;playerNames[1]=myName;
+    subscribeGame(code,'guest');
+    gameChannel.publish('player_join',{name:myName});
+    show('game');hudStatusEl.textContent='Connected — waiting for host…';
+  }catch(e){lobbyErr.textContent=e.message;$('btnJoin').disabled=false;}
+});
+$('btnCancelWait').addEventListener('click',()=>{if(gameChannel)gameChannel.detach();resetLobby();show('lobby');});
+$('btnShowLb').addEventListener('click',()=>show('lb'));
+$('btnLbBack').addEventListener('click',()=>show('lobby'));
+
+/* ── Matchmaking ── */
+async function startMatchmaking(){
+  mmActive=true;
+  mmChannel=ably.channels.get('pool:matchmaking');
+  mmChannel.subscribe('match_offer',async msg=>{
+    if(!mmActive||msg.data.targetId!==myClientId)return;
+    mmActive=false;clearInterval(mmInterval);
+    await mmChannel.presence.leave().catch(()=>{});mmChannel.unsubscribe();
+    acceptMatch(msg.data.roomCode,msg.data.hostName);
+  });
+  await mmChannel.presence.enter({name:myName,ts:Date.now()});
+  mmInterval=setInterval(async()=>{
+    if(!mmActive)return;
+    const members=await mmChannel.presence.get();
+    const others=members.filter(m=>m.clientId!==myClientId);
+    const myPos=members.findIndex(m=>m.clientId===myClientId);
+    $('queuePos').textContent=myPos>=0?myPos+1:1;
+    if(others.length>0){
+      others.sort((a,b)=>(a.data.ts||0)-(b.data.ts||0));
+      const target=others[0];
+      if(myClientId<target.clientId){
+        mmActive=false;clearInterval(mmInterval);
+        await mmChannel.presence.leave().catch(()=>{});mmChannel.unsubscribe();
+        const code=genCode();
+        mmChannel.publish('match_offer',{targetId:target.clientId,roomCode:code,hostName:myName});
+        initiateMatch(code,target.data.name||'Opponent');
+      }
+    }
+  },1500);
+}
+function initiateMatch(code,opponentName){
+  roomCode=code;myIndex=0;playerNames[0]=myName;playerNames[1]=opponentName;
+  subscribeGame(code,'host');show('game');
+  const s=buildInitialState();gs=s;balls=cloneBalls(gs.balls);
+  setTimeout(()=>gameChannel.publish('game_init',{gameState:gs,players:playerNames}),1200);
+  startGame(gs);
+}
+function acceptMatch(code,hostName){
+  clearInterval(mmInterval);
+  roomCode=code;myIndex=1;playerNames[0]=hostName;playerNames[1]=myName;
+  subscribeGame(code,'guest');show('game');
+  hudStatusEl.textContent='Matched! Starting game…';
+}
+$('btnCancelMM').addEventListener('click',()=>{
+  mmActive=false;clearInterval(mmInterval);
+  if(mmChannel){mmChannel.unsubscribe();mmChannel.presence.leave().catch(()=>{});}
+  resetLobby();show('lobby');
+});
+
+/* ── Game channel ── */
+function subscribeGame(code,role){
+  gameChannel=ably.channels.get(`pool:${code}`);
+
+  /* ── Presence: reconnect tracking ── */
+  gameChannel.presence.enter({name:myName,index:myIndex});
+
+  gameChannel.presence.subscribe('leave',msg=>{
+    // Someone left — check if it's the opponent
+    if(msg.clientId!==myClientId&&myIndex>=0&&gs&&!gs.winner){
+      opponentPresent=false;
+      startReconnectTimer();
+    }
+  });
+
+  gameChannel.presence.subscribe('enter',msg=>{
+    // Opponent came back
+    if(msg.clientId!==myClientId&&!opponentPresent){
+      opponentPresent=true;
+      stopReconnectTimer();
+      // If we're host, re-send current state so they can resume
+      if(myIndex===0){
+        gameChannel.publish('game_state_sync',{gameState:gs,players:playerNames,balls:balls.map(b=>({...b}))});
+      }
+    }
+  });
+
+  /* ── Game events ── */
+  gameChannel.subscribe('player_join',msg=>{
+    if(myIndex!==0)return;
+    playerNames[1]=msg.data.name;
+    const s=buildInitialState();gs=s;balls=cloneBalls(gs.balls);
+    gameChannel.publish('game_init',{gameState:gs,players:playerNames});
+    show('game');startGame(gs);
+  });
+
+  gameChannel.subscribe('game_init',msg=>{
+    if(myIndex===0)return;
+    playerNames=msg.data.players;
+    startGame(msg.data.gameState);
+  });
+
+  // State sync after reconnect (guest receives from host)
+  gameChannel.subscribe('game_state_sync',msg=>{
+    if(myIndex===0)return; // host sent it, not for us
+    playerNames=msg.data.players;
+    gs=msg.data.gameState;
+    balls=cloneBalls(msg.data.balls||gs.balls);
+    hudStatusEl.textContent=gs.turn===myIndex?'Your turn ⬇ Drag to shoot':`${playerNames[gs.turn]}'s turn`;
+    updateHud();
+    // Announce we're back
+    gameChannel.publish('reconnected',{index:myIndex,name:myName});
+  });
+
+  gameChannel.subscribe('reconnected',msg=>{
+    // Opponent confirmed they're back in sync
+    stopReconnectTimer();
+    hudStatusEl.textContent=`${msg.data.name} reconnected – game resumes!`;
+    setTimeout(()=>{
+      hudStatusEl.textContent=gs.turn===myIndex?'Your turn ⬇ Drag to shoot':`${playerNames[gs.turn]}'s turn`;
+    },2000);
+  });
+
+  gameChannel.subscribe('shot_result',msg=>{
+    if(msg.data.by===myIndex)return;
+    applyResult(msg.data);
+  });
+
+  gameChannel.subscribe('cue_placed',msg=>{
+    if(msg.data.by===myIndex)return;
+    const cue=balls.find(b=>b.id===0);
+    if(cue){cue.x=msg.data.x;cue.y=msg.data.y;cue.pocketed=false;}
+    if(gs)gs.ballInHand=false;
+    placingCue=false;
+    hudStatusEl.textContent=gs&&gs.turn===myIndex?'Your turn ⬇ Drag to shoot':`${playerNames[gs.turn]}'s turn`;
+    updateHud();
+  });
+
+  gameChannel.subscribe('rematch_ok',()=>{
+    gameRecorded=false;
+    const s=buildInitialState();gs=s;balls=cloneBalls(gs.balls);
+    overlay.classList.remove('show');startGame(gs);
+  });
+
+  gameChannel.subscribe('opponent_forfeited',()=>{
+    // Opponent chose "take the win" on their side — award win to us
+    stopReconnectTimer();
+    recordResult('win');
+    showResultOverlay('🎉 You win!','Opponent forfeited.',false,false,true);
+  });
+
+  /* ── Chat ── */
+  gameChannel.subscribe('chat_msg',msg=>{
+    if(msg.data.from===myClientId)return;
+    appendChat(msg.data.name,msg.data.text,'opp');
+  });
+}
+
+/* ── Chat ── */
+function appendChat(name,text,type){
+  const el=chatEl();if(!el)return;
+  const wrap=document.createElement('div');
+  wrap.className='chat-msg '+type;
+  if(type==='sys'){
+    wrap.textContent=text;
+  }else{
+    const who=document.createElement('div');who.className='chat-who';who.textContent=name;
+    const bubble=document.createElement('div');bubble.className='chat-bubble';bubble.textContent=text;
+    wrap.appendChild(who);wrap.appendChild(bubble);
+  }
+  el.appendChild(wrap);
+  el.scrollTop=el.scrollHeight;
+}
+
+function sendChat(text){
+  text=text.trim().slice(0,120);
+  if(!text||!gameChannel||myIndex<0)return;
+  appendChat(myName,text,'me');
+  gameChannel.publish('chat_msg',{from:myClientId,name:myName,text});
+}
+
+document.getElementById('chatSend').addEventListener('click',()=>{
+  const inp=document.getElementById('chatInput');
+  sendChat(inp.value);inp.value='';
+});
+document.getElementById('chatInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();const inp=e.target;sendChat(inp.value);inp.value='';}
+});
+document.querySelectorAll('.emoji-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>sendChat(btn.dataset.emoji));
+});
+
+/* ── Reconnect timer ── */
+function startReconnectTimer(){
+  if(reconnectTimer)return; // already running
+  const oppName=playerNames[1-myIndex]||'Opponent';
+  reconnectNameEl.textContent=oppName;
+  reconnectSecsLeft=RECONNECT_SECONDS;
+  reconnectOverlay.classList.add('show');
+  updateTimerRing();
+
+  reconnectTimer=setInterval(()=>{
+    reconnectSecsLeft--;
+    updateTimerRing();
+    if(reconnectSecsLeft<=0){
+      stopReconnectTimer();
+      // Time's up — opponent forfeited
+      gameChannel.publish('opponent_forfeited',{winner:myIndex});
+      recordResult('win');
+      showResultOverlay('🎉 You win!',`${oppName} didn't reconnect in time.`,false,true,true);
+    }
+  },1000);
+}
+
+function stopReconnectTimer(){
+  clearInterval(reconnectTimer);reconnectTimer=null;
+  reconnectOverlay.classList.remove('show');
+  opponentPresent=true;
+}
+
+function updateTimerRing(){
+  const pct=reconnectSecsLeft/RECONNECT_SECONDS;
+  const offset=RING_CIRC*(1-pct);
+  timerRingFill.style.strokeDashoffset=offset;
+  timerRingNum.textContent=reconnectSecsLeft;
+  const urgent=reconnectSecsLeft<=10;
+  timerRingFill.classList.toggle('urgent',urgent);
+  timerRingNum.classList.toggle('urgent',urgent);
+}
+
+// "Don't wait" — forfeit on behalf of opponent immediately
+$('btnForfeitWait').addEventListener('click',()=>{
+  const oppName=playerNames[1-myIndex]||'Opponent';
+  stopReconnectTimer();
+  gameChannel.publish('opponent_forfeited',{winner:myIndex});
+  recordResult('win');
+  showResultOverlay('🎉 You win!',`${oppName} disconnected.`,false,true,true);
+});
+
+/* ── Game flow ── */
+function startGame(state){
+  if(state){gs=state;balls=cloneBalls(gs.balls);}
+  simulating=false;shotLock=false;placingCue=false;gameRecorded=false;opponentPresent=true;
+  stopReconnectTimer();
+  overlay.classList.remove('show');
+  const _ce=chatEl();if(_ce){_ce.innerHTML='';}
+  appendChat('','Game started — good luck! 🎱','sys');
+  updateHud();show('game');
+  requestAnimationFrame(loop);
+}
+
+function resetLobby(){
+  ['btnQuickMatch','btnCreate','btnJoin'].forEach(id=>$(id).disabled=false);
+  $('onlineBadge').style.display='none';
+  roomCode=null;myIndex=-1;gs=null;balls=[];mmActive=false;
+  clearInterval(mmInterval);gameRecorded=false;
+  stopReconnectTimer();
+}
+
+/* ── Ball layout ── */
+function buildInitialState(){
+  const b=[];
+  b.push({id:0,x:200,y:200,vx:0,vy:0,pocketed:false});
+  const tipX=560,tipY=200,dxR=BR*2*Math.cos(Math.PI/6);
+  const order=[1,9,2,10,8,3,11,4,12,5,13,6,14,7,15];
+  const pos=[[0,0],[1,-1],[1,1],[2,-2],[2,0],[2,2],[3,-3],[3,-1],[3,1],[3,3],[4,-4],[4,-2],[4,0],[4,2],[4,4]];
+  order.forEach((num,i)=>{const[row,col]=pos[i];b.push({id:num,x:tipX+row*dxR,y:tipY+col*BR,vx:0,vy:0,pocketed:false});});
+  return{balls:b,turn:0,playerTypes:[null,null],ballInHand:false,winner:null,breakShot:true};
+}
+function cloneBalls(s){return JSON.parse(JSON.stringify(s));}
+
+/* ── HUD ── */
+function updateHud(){
+  if(!gs)return;
+  p1NameEl.textContent=playerNames[0]||'Player 1';
+  p2NameEl.textContent=playerNames[1]||'Player 2';
+  const t=v=>v==='solid'?'● Solids 1-7':v==='stripe'?'◑ Stripes 9-15':'● Open table';
+  p1TypeEl.textContent=t(gs.playerTypes?.[0]);
+  p2TypeEl.textContent=t(gs.playerTypes?.[1]);
+  $('hudP1').classList.toggle('active',gs.turn===0);
+  $('hudP2').classList.toggle('active',gs.turn===1);
+}
+
+/* ── Leaderboard ── */
+async function loadLeaderboard(){
+  $('lbContent').innerHTML='<p class="lb-loading">Loading…</p>';
+  try{
+    const data=await fetch('/api/leaderboard').then(r=>r.json());
+    if(!data.ok||!data.rows.length){$('lbContent').innerHTML='<p class="lb-empty">No games yet. Be the first!</p>';return;}
+    const badge=r=>{const cls=r===1?'rank-1':r===2?'rank-2':r===3?'rank-3':'rank-n';return`<span class="rank-badge ${cls}">${r}</span>`;};
+    const rows=data.rows.map(p=>{
+      const wr=p.played>0?Math.round(p.wins/p.played*100):0;
+      const isYou=myName&&p.name.toLowerCase()===myName.toLowerCase();
+      return`<tr${isYou?' class="you-row"':''}>
+        <td>${badge(p.rank)}</td>
+        <td><span${isYou?' class="you-highlight"':''}>${esc(p.name)}</span>${isYou?' <span style="font-size:.7rem;color:#f43f5e">(you)</span>':''}</td>
+        <td class="right" style="color:#22c55e;font-weight:700">${p.wins}</td>
+        <td class="right" style="color:#f87171">${p.losses}</td>
+        <td class="right"><span class="win-rate">${wr}%</span></td>
+      </tr>`;
+    }).join('');
+    $('lbContent').innerHTML=`<table><thead><tr><th>#</th><th>Player</th><th class="right">W</th><th class="right">L</th><th class="right">Win%</th></tr></thead><tbody>${rows}</tbody></table><p style="font-size:.72rem;color:#475569;margin-top:14px;text-align:right">Updates after each game</p>`;
+  }catch(e){$('lbContent').innerHTML='<p class="lb-empty">Could not load leaderboard.</p>';}
+}
+
+async function recordResult(result){
+  if(gameRecorded||!myName)return;
+  gameRecorded=true;
+  try{await fetch('/api/leaderboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:myName,result})});}
+  catch(e){console.warn('Leaderboard post failed',e);}
+}
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ── Result overlay ── */
+function showResultOverlay(title,sub,rematch,findNew,viewLb){
+  overlayTitle.textContent=title;overlaySub.textContent=sub;
+  btnRematch.style.display=rematch?'block':'none';
+  btnFindNew.style.display=findNew?'block':'none';
+  btnViewLb.style.display=viewLb?'block':'none';
+  overlay.classList.add('show');
+}
+btnRematch.addEventListener('click',()=>{
+  gameChannel.publish('rematch_ok',{});gameRecorded=false;
+  const s=buildInitialState();gs=s;balls=cloneBalls(s.balls);
+  overlay.classList.remove('show');startGame(gs);
+});
+btnFindNew.addEventListener('click',()=>{
+  overlay.classList.remove('show');
+  if(gameChannel){gameChannel.publish('player_left',{});gameChannel.detach();}
+  resetLobby();show('lobby');
+  setTimeout(()=>$('btnQuickMatch').click(),80);
+});
+btnViewLb.addEventListener('click',()=>{overlay.classList.remove('show');show('lb');});
+btnHome.addEventListener('click',()=>{
+  if(gameChannel){gameChannel.publish('player_left',{});gameChannel.detach();}
+  resetLobby();show('lobby');
+});
+
+/* ── Input ── */
+function coords(e){
+  const r=canvas.getBoundingClientRect(),sx=TW/r.width,sy=TH/r.height;
+  const cx=e.touches?e.touches[0].clientX:e.clientX,cy=e.touches?e.touches[0].clientY:e.clientY;
+  return{x:(cx-r.left)*sx,y:(cy-r.top)*sy};
+}
+canvas.addEventListener('mousemove',e=>onMove(coords(e)));
+canvas.addEventListener('mousedown',e=>onDown(coords(e)));
+canvas.addEventListener('mouseup',  e=>onUp(coords(e)));
+canvas.addEventListener('touchmove', e=>{e.preventDefault();onMove(coords(e));},{passive:false});
+canvas.addEventListener('touchstart',e=>{e.preventDefault();onDown(coords(e));},{passive:false});
+canvas.addEventListener('touchend',  e=>{e.preventDefault();onUp(coords(e));},  {passive:false});
+
+function myTurn(){return gs&&gs.turn===myIndex&&!simulating&&!shotLock&&myIndex>=0&&opponentPresent;}
+
+function onMove({x,y}){
+  mouseX=x;mouseY=y;
+  if(dragging){
+    const cue=balls.find(b=>b.id===0);if(!cue)return;
+    const dx=dragX-x,dy=dragY-y;
+    aimAngle=Math.atan2(dy,dx);aimPower=Math.min(Math.hypot(dx,dy)/100,1);
+    powerFill.style.width=(aimPower*100)+'%';
+  }
+}
+function onDown({x,y}){
+  if(!myTurn())return;
+  if(placingCue){
+    if(validCuePlacement(x,y)){
+      const cue=balls.find(b=>b.id===0);if(cue){cue.x=x;cue.y=y;cue.pocketed=false;}
+      if(gs)gs.ballInHand=false;placingCue=false;
+      gameChannel.publish('cue_placed',{x,y,by:myIndex});
+      hudStatusEl.textContent='Your turn ⬇ Drag to shoot';
+    }
+    return;
+  }
+  const cue=balls.find(b=>b.id===0);if(!cue||cue.pocketed)return;
+  dragX=x;dragY=y;dragging=true;
+  aimAngle=Math.atan2(cue.y-y,cue.x-x);aimPower=0;
+}
+function onUp({x,y}){
+  if(!dragging)return;dragging=false;powerFill.style.width='0%';
+  if(aimPower<0.02||!myTurn())return;shoot();
+}
+function validCuePlacement(x,y){
+  if(x<BR*2||x>TW-BR*2||y<BR*2||y>TH-BR*2)return false;
+  for(const b of balls)if(!b.pocketed&&b.id!==0&&Math.hypot(x-b.x,y-b.y)<BR*2+2)return false;
+  return true;
+}
+
+/* ── Shoot ── */
+function shoot(){
+  shotLock=true;
+  const cue=balls.find(b=>b.id===0);if(!cue)return;
+  cue.vx=Math.cos(aimAngle)*aimPower*MAX_PWR;
+  cue.vy=Math.sin(aimAngle)*aimPower*MAX_PWR;
+  simulating=true;runSim();
+}
+
+/* ── Physics ── */
+function runSim(){
+  let firstHit=null;const pocketed=new Set();let steps=0;
+  function step(){
+    if(++steps>8000){balls.forEach(b=>{b.vx=0;b.vy=0;});done();return;}
+    let moving=false;
+    for(const b of balls){
+      if(b.pocketed)continue;
+      if(Math.abs(b.vx)<0.01&&Math.abs(b.vy)<0.01){b.vx=0;b.vy=0;continue;}
+      moving=true;b.x+=b.vx;b.y+=b.vy;b.vx*=FRICTION;b.vy*=FRICTION;
+    }
+    for(const b of balls){
+      if(b.pocketed)continue;
+      for(const[px,py]of POCKETS){if(Math.hypot(b.x-px,b.y-py)<PR){b.pocketed=true;b.vx=0;b.vy=0;pocketed.add(b.id);break;}}
+    }
+    for(const b of balls){
+      if(b.pocketed)continue;
+      if(b.x-BR<0){b.x=BR;b.vx=Math.abs(b.vx)*CR;}if(b.x+BR>TW){b.x=TW-BR;b.vx=-Math.abs(b.vx)*CR;}
+      if(b.y-BR<0){b.y=BR;b.vy=Math.abs(b.vy)*CR;}if(b.y+BR>TH){b.y=TH-BR;b.vy=-Math.abs(b.vy)*CR;}
+    }
+    const ab=balls.filter(b=>!b.pocketed);
+    for(let i=0;i<ab.length;i++){for(let j=i+1;j<ab.length;j++){
+      const a=ab[i],b=ab[j],d=Math.hypot(a.x-b.x,a.y-b.y);
+      if(d<BR*2&&d>0){
+        if(firstHit===null){if(a.id===0)firstHit=b.id;else if(b.id===0)firstHit=a.id;}
+        const nx=(b.x-a.x)/d,ny=(b.y-a.y)/d,rv=(a.vx-b.vx)*nx+(a.vy-b.vy)*ny;
+        if(rv>0){const imp=rv*BRES;a.vx-=imp*nx;a.vy-=imp*ny;b.vx+=imp*nx;b.vy+=imp*ny;}
+        const ov=(BR*2-d)/2;a.x-=ov*nx;a.y-=ov*ny;b.x+=ov*nx;b.y+=ov*ny;
+      }
+    }}
+    if(!moving){done();return;}
+    if(steps%3===0)requestAnimationFrame(step);else step();
+  }
+  function done(){
+    simulating=false;
+    const pocketedIds=[...pocketed];const result=computeRules(firstHit,pocketedIds);
+    gameChannel.publish('shot_result',{by:myIndex,ballStates:balls.map(b=>({id:b.id,x:b.x,y:b.y,pocketed:b.pocketed})),pocketed:pocketedIds,firstHit,result});
+    applyResult({by:myIndex,ballStates:balls.map(b=>({id:b.id,x:b.x,y:b.y,pocketed:b.pocketed})),pocketed:pocketedIds,firstHit,result});
+  }
+  step();
+}
+
+/* ── Apply result ── */
+function applyResult(data){
+  if(data.ballStates){
+    data.ballStates.forEach(bs=>{const b=balls.find(b=>b.id===bs.id);if(b)Object.assign(b,bs);});
+    if(gs)gs.balls=cloneBalls(balls);
+  }
+  const{result}=data;if(!result||!gs)return;
+  gs.turn=result.nextTurn;gs.ballInHand=result.ballInHand;
+  gs.playerTypes=result.playerTypes;gs.breakShot=false;gs.winner=result.winner;
+  shotLock=false;simulating=false;
+
+  if(result.winner!==null){
+    const iWon=result.winner===myIndex;
+    const oppName=playerNames[1-myIndex]||'Opponent';
+    const wname=playerNames[result.winner]||`Player ${result.winner+1}`;
+    recordResult(iWon?'win':'loss');
+    appendChat('',iWon?`🎉 ${myName} wins!`:`🏆 ${wname} wins the game!`,'sys');
+    showResultOverlay(
+      iWon?'🎉 You win!':'😞 You lose',
+      iWon?`You beat ${oppName}!`:`${wname} wins this round.`,
+      true,true,true
+    );
+  } else {
+    const isMy=gs.turn===myIndex;
+    hudStatusEl.textContent=result.foul
+      ?(isMy?'Foul – place the cue ball':'Foul – opponent places cue ball')
+      :isMy?'Your turn ⬇ Drag to shoot':`${playerNames[gs.turn]}'s turn`;
+    if(gs.ballInHand&&gs.turn===myIndex){placingCue=true;hudStatusEl.textContent='Click to place the cue ball';}
+  }
+  updateHud();
+}
+
+/* ── Rules ── */
+function computeRules(firstHit,pocketedIds){
+  if(!gs)return{};
+  const cur=gs.turn,opp=1-cur;let foul=false,switchTurn=true,winner=null;
+  const pt=gs.playerTypes?.[cur];
+  const cuePocketed=pocketedIds.includes(0),eightPocketed=pocketedIds.includes(8);
+  if(cuePocketed)foul=true;
+  if(!gs.breakShot&&!cuePocketed&&firstHit!=null){
+    const s=IS_STRIPE(firstHit);
+    if(pt==='solid'&&s)foul=true;if(pt==='stripe'&&!s&&firstHit!==8)foul=true;if(pt===null&&firstHit===8)foul=true;
+  }
+  const newTypes=[...(gs.playerTypes||[null,null])];
+  if(!foul&&newTypes[cur]===null&&!gs.breakShot){
+    const legit=pocketedIds.filter(id=>id!==0&&id!==8);
+    if(legit.length>0){newTypes[cur]=IS_STRIPE(legit[0])?'stripe':'solid';newTypes[opp]=IS_STRIPE(legit[0])?'solid':'stripe';}
+  }
+  if(eightPocketed){
+    const rem=newTypes[cur]==='solid'?balls.filter(b=>!b.pocketed&&b.id>=1&&b.id<=7).length:balls.filter(b=>!b.pocketed&&b.id>=9&&b.id<=15).length;
+    winner=(foul||rem>0)?opp:cur;
+  }
+  if(!foul&&!eightPocketed){
+    const ownPots=pocketedIds.filter(id=>{
+      if(id===0||id===8)return false;
+      if(newTypes[cur]==='solid')return!IS_STRIPE(id);if(newTypes[cur]==='stripe')return IS_STRIPE(id);return true;
+    });
+    if(ownPots.length>0)switchTurn=false;
+  }
+  return{foul,winner,nextTurn:winner!==null?cur:(switchTurn||foul?opp:cur),ballInHand:foul&&winner===null,playerTypes:newTypes};
+}
+
+/* ── Render ── */
+function loop(){draw();requestAnimationFrame(loop);}
+function draw(){
+  ctx.clearRect(0,0,TW,TH);drawTable();drawPockets();drawBalls();
+  if(myTurn()&&!placingCue)drawCue();if(myTurn()&&placingCue)drawCuePlacement();
+}
+function drawTable(){
+  const g=ctx.createLinearGradient(0,0,0,TH);g.addColorStop(0,'#166534');g.addColorStop(1,'#14532d');
+  ctx.fillStyle=g;ctx.fillRect(0,0,TW,TH);
+  ctx.strokeStyle='rgba(255,255,255,0.05)';ctx.lineWidth=1;
+  [TW/2,TW*.25].forEach(x=>{ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,TH);ctx.stroke();});
+}
+function drawPockets(){
+  for(const[px,py]of POCKETS){ctx.beginPath();ctx.arc(px,py,PR,0,Math.PI*2);ctx.fillStyle='#0a0a0a';ctx.fill();ctx.strokeStyle='#3b1e0a';ctx.lineWidth=2;ctx.stroke();}
+}
+function drawBalls(){
+  for(const b of balls){
+    if(b.pocketed)continue;
+    ctx.save();ctx.translate(b.x,b.y);
+    ctx.beginPath();ctx.arc(2,2,BR,0,Math.PI*2);ctx.fillStyle='rgba(0,0,0,0.22)';ctx.fill();
+    const color=BALL_COLORS[b.id]||'#888';
+    if(b.id===0){
+      const g=ctx.createRadialGradient(-3,-3,2,0,0,BR);g.addColorStop(0,'#fff');g.addColorStop(1,'#ccc');
+      ctx.beginPath();ctx.arc(0,0,BR,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+    }else if(IS_STRIPE(b.id)){
+      ctx.beginPath();ctx.arc(0,0,BR,0,Math.PI*2);ctx.fillStyle='#f5f5f5';ctx.fill();
+      ctx.save();ctx.beginPath();ctx.arc(0,0,BR,0,Math.PI*2);ctx.clip();ctx.fillStyle=color;ctx.fillRect(-BR,-BR*.45,BR*2,BR*.9);ctx.restore();
+    }else{
+      const g=ctx.createRadialGradient(-3,-3,1,0,0,BR);g.addColorStop(0,lighten(color,45));g.addColorStop(1,color);
+      ctx.beginPath();ctx.arc(0,0,BR,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
+    }
+    ctx.beginPath();ctx.arc(0,0,BR,0,Math.PI*2);ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=0.8;ctx.stroke();
+    if(b.id!==0){
+      ctx.beginPath();ctx.arc(0,0,BR*.38,0,Math.PI*2);ctx.fillStyle=IS_STRIPE(b.id)?color:'rgba(255,255,255,0.85)';ctx.fill();
+      ctx.fillStyle=IS_STRIPE(b.id)?'#fff':'#111';ctx.font=`bold ${BR*.65}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(b.id,0,0.5);
+    }
+    ctx.restore();
+  }
+}
+function drawCue(){
+  const cue=balls.find(b=>b.id===0);if(!cue||cue.pocketed)return;
+  const angle=Math.atan2(mouseY-cue.y,mouseX-cue.x)+Math.PI,pw=dragging?aimPower:0;
+  ctx.save();ctx.setLineDash([4,6]);ctx.strokeStyle='rgba(255,255,255,0.18)';ctx.lineWidth=0.8;
+  ctx.beginPath();ctx.moveTo(cue.x,cue.y);ctx.lineTo(cue.x+Math.cos(angle+Math.PI)*260,cue.y+Math.sin(angle+Math.PI)*260);
+  ctx.stroke();ctx.setLineDash([]);ctx.restore();
+  const pull=12+pw*26,tx=cue.x+Math.cos(angle)*(BR+2+pull),ty=cue.y+Math.sin(angle)*(BR+2+pull);
+  const bkx=tx+Math.cos(angle)*130,bky=ty+Math.sin(angle)*130;
+  const g=ctx.createLinearGradient(tx,ty,bkx,bky);g.addColorStop(0,'#f0e0b0');g.addColorStop(.15,'#c8a060');g.addColorStop(1,'#7a4820');
+  ctx.save();ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(bkx,bky);ctx.strokeStyle=g;ctx.lineWidth=5;ctx.lineCap='round';ctx.stroke();
+  ctx.beginPath();ctx.arc(tx,ty,2.5,0,Math.PI*2);ctx.fillStyle='#90c8f0';ctx.fill();ctx.restore();
+}
+function drawCuePlacement(){
+  const ok=validCuePlacement(mouseX,mouseY);
+  ctx.save();ctx.beginPath();ctx.arc(mouseX,mouseY,BR,0,Math.PI*2);
+  ctx.fillStyle=ok?'rgba(255,255,255,0.45)':'rgba(255,80,80,0.4)';ctx.fill();
+  ctx.strokeStyle=ok?'#fff':'#f00';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.stroke();ctx.restore();
+}
+function lighten(hex,amt){
+  let c=parseInt(hex.replace('#',''),16);
+  const r=Math.min(255,((c>>16)&0xff)+amt),g=Math.min(255,((c>>8)&0xff)+amt),b=Math.min(255,(c&0xff)+amt);
+  return'#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+</script>
+</body>
+</html>

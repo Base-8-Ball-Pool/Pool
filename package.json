@@ -1,0 +1,9 @@
+{
+  "name": "8ball-pool-vercel",
+  "version": "1.0.0",
+  "description": "Multiplayer 8-ball pool – Vercel + Ably + KV leaderboard",
+  "dependencies": {
+    "ably": "^1.2.50",
+    "@vercel/kv": "^1.0.1"
+  }
+}
